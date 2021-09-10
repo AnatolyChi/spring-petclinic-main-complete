@@ -15,18 +15,17 @@
  */
 package org.springframework.samples.petclinic.owner;
 
-import java.util.Map;
-
 import javax.validation.Valid;
 
+import org.springframework.samples.petclinic.vet.VetRepository;
 import org.springframework.samples.petclinic.visit.Visit;
 import org.springframework.samples.petclinic.visit.VisitRepository;
 import org.springframework.stereotype.Controller;
+import org.springframework.ui.ModelMap;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.WebDataBinder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.InitBinder;
-import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 
@@ -44,9 +43,12 @@ class VisitController {
 
 	private final PetRepository pets;
 
-	public VisitController(VisitRepository visits, PetRepository pets) {
+	private final VetRepository vets;
+
+	public VisitController(VisitRepository visits, PetRepository pets, VetRepository vets) {
 		this.visits = visits;
 		this.pets = pets;
+		this.vets = vets;
 	}
 
 	@InitBinder
@@ -61,29 +63,29 @@ class VisitController {
 	 * @param petId
 	 * @return Pet
 	 */
-	@ModelAttribute("visit")
-	public Visit loadPetWithVisit(@PathVariable("petId") int petId, Map<String, Object> model) {
-		Pet pet = this.pets.findById(petId);
-		pet.setVisitsInternal(this.visits.findByPetId(petId));
-		model.put("pet", pet);
-		Visit visit = new Visit();
-		pet.addVisit(visit);
-		return visit;
-	}
 
 	// Spring MVC calls method loadPetWithVisit(...) before initNewVisitForm is called
 	@GetMapping("/owners/*/pets/{petId}/visits/new")
-	public String initNewVisitForm(@PathVariable("petId") int petId, Map<String, Object> model) {
+	public String initNewVisitForm(@PathVariable("petId") int petId, ModelMap model) {
 
-		// Передать атрибут ветеринаров
-
+		Pet pet = this.pets.findById(petId);
+		Visit visit = new Visit();
+		pet.setVisitsInternal(this.visits.findByPetId(petId));
+		model.put("pet", pet);
+		model.put("vets", vets.findAll());
+		model.put("visit", visit);
+		pet.addVisit(visit);
 		return "pets/createOrUpdateVisitForm";
 	}
 
 	// Spring MVC calls method loadPetWithVisit(...) before processNewVisitForm is called
 	@PostMapping("/owners/{ownerId}/pets/{petId}/visits/new")
-	public String processNewVisitForm(@Valid Visit visit, BindingResult result) {
+	public String processNewVisitForm(@Valid Visit visit, BindingResult result,  ModelMap model) {
+
+
 		if (result.hasErrors()) {
+			model.put("pet", pets.findById(visit.getPetId()));
+			model.put("vets", vets.findAll());
 			return "pets/createOrUpdateVisitForm";
 		}
 		else {
@@ -92,4 +94,42 @@ class VisitController {
 		}
 	}
 
+	@GetMapping("/owners/{ownerId}/pets/{petId}/visits/{visitId}/edit")
+	public String initUpdateVisitForm(ModelMap model, @PathVariable("petId") int petId, @PathVariable("visitId") int visitId) {
+
+		Pet pet = this.pets.findById(petId);
+		pet.setVisitsInternal(this.visits.findByPetId(petId));
+
+		model.put("pet", pet);
+		model.put("vets", vets.findAll());
+
+		Visit visitOptional = visits.findByPetId(petId)
+			.stream().filter(visit -> visit.getId() == visitId)
+			.findAny().get();
+
+		model.put("visit", visitOptional);
+
+		return "pets/createOrUpdateVisitForm";
+	}
+
+	@PostMapping("/owners/{ownerId}/pets/{petId}/visits/{visitId}/edit")
+	public String processEditVisitFrom(@Valid Visit visit, BindingResult result, ModelMap model, @PathVariable("visitId") int visitId) {
+
+		if (result.hasErrors()) {
+			model.put("vets", vets.findAll());
+			model.put("pet", pets.findById(visit.getPetId()));
+			return "pets/createOrUpdateVisitForm";
+		} else {
+			visit.setId(visitId);
+			this.visits.save(visit);
+			return "redirect:/owners/{ownerId}";
+		}
+	}
+
+	@GetMapping("/owners/{ownerId}/pets/{petId}/visits/{visitId}/cancel")
+	public String processCancelVisitForm(@PathVariable("visitId") int visitId) {
+
+		visits.deleteById(visitId);
+		return "redirect:/owners/{ownerId}";
+	}
 }
